@@ -9,7 +9,6 @@ qt_add_qml_module(qmlapp
     RESOURCE_PREFIX /example.mixxx.org/imports
     QML_FILES
         main.qml
-        ResizableHeaderView.qml
 )
 
 

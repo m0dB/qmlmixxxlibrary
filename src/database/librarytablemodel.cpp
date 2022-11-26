@@ -1,5 +1,10 @@
 #include "librarytablemodel.h"
 
+#include <QDebug>
+#include <QSqlError>
+#include <QSqlQuery>
+#include <QSqlRecord>
+
 #include "mixxxdb.h"
 
 // QSqlQueryModel to retreive the library table from mixxxdb.sqlite
@@ -9,51 +14,84 @@
 // TODO add sorting per column (asc/dec)
 
 LibraryTableModel::LibraryTableModel(QObject* parent)
-        : QSqlQueryModel(parent), m_fields{"id", "artist", "title", "genre", "duration", "bpm"} {
-    sortByColumn(0, Qt::AscendingOrder);
+        : QSortFilterProxyModel(parent) {
+    m_sqlTableModel = new SqlTableModel(parent);
+    setSourceModel(m_sqlTableModel);
 
-    setHeaderData(0, Qt::Horizontal, ""); // Don't show id
-    setHeaderData(1, Qt::Horizontal, "Artist");
-    setHeaderData(2, Qt::Horizontal, "Title");
-    setHeaderData(3, Qt::Horizontal, "Genre");
-    setHeaderData(4, Qt::Horizontal, "Duration");
-    setHeaderData(5, Qt::Horizontal, "BPM");
-}
-
-void LibraryTableModel::sortByColumn(int column, Qt::SortOrder sortOrder) {
-    QString qs = "SELECT " + m_fields.join(",") + " FROM library ORDER BY " + m_fields[column] + " " + (sortOrder == Qt::AscendingOrder ? "ASC" : "DESC");
-    setQuery(qs, MixxxDb::singleton()->database());
-}
-
-QVariant LibraryTableModel::data(const QModelIndex& index, int role) const {
-    if (!index.isValid() || role != Qt::DisplayRole) {
-        return QVariant();
+    QSqlQuery query("SELECT COUNT(*) FROM library", MixxxDb::singleton()->database());
+    query.exec();
+    if (query.first()) {
+        m_totalRowCount = query.value(0).toInt();
     }
+}
 
-    const auto result = QSqlQueryModel::data(index, role);
+void LibraryTableModel::insertSomething() {
+    for (int i = 0; i < 100; i++) {
+        static int k = 0;
+        k++;
+        QSqlRecord record = m_sqlTableModel->record();
+        record.setValue("artist", QString("Artist") + QString::number(k));
+        record.setValue("title", QString("Title") + QString::number(k));
+        bool result = m_sqlTableModel->insertRecord(-1, record);
+        m_sqlTableModel->submitAll();
+        m_totalRowCount++;
+        emit totalRowCountChanged();
+    }
+}
 
-    // rudimentary format of duration and bpm
-    switch (index.column()) {
-    case 4: // Duration
-    {
-        if (result.canConvert<double>()) {
-            int seconds = static_cast<int>(result.toDouble() + 0.5);
+void LibraryTableModel::sort(int column, Qt::SortOrder sortOrder) {
+    QSortFilterProxyModel::sort(column, sortOrder);
+}
+
+class DurationFormatter : public Formatter {
+  public:
+    QVariant format(const QVariant& variant) {
+        if (variant.canConvert<double>()) {
+            int seconds = static_cast<int>(variant.toDouble() + 0.5);
             int minutes = seconds / 60;
             seconds -= minutes * 60;
             return QString::number(minutes) + ":" + QStringLiteral("%1").arg(seconds, 2, 10, QLatin1Char('0'));
         }
-        break;
+        return variant;
     }
-    case 5: // BPM
-    {
-        if (result.canConvert<double>()) {
-            return QString::number(result.toDouble(), 'f', 1);
+};
+
+class BpmFormatter : public Formatter {
+  public:
+    QVariant format(const QVariant& variant) {
+        if (variant.canConvert<double>()) {
+            return QString::number(variant.toDouble(), 'f', 1);
         }
-        break;
+        return variant;
     }
-    default:
-        break;
+};
+
+LibraryTableModel::SqlTableModel::SqlTableModel(QObject* parent)
+        : QSqlTableModel(parent, MixxxDb::singleton()->database()) {
+    setTable("library");
+    setEditStrategy(QSqlTableModel::OnManualSubmit);
+    select();
+    m_formatters.resize(columnCount());
+    for (int i = 0; i < columnCount(); i++) {
+        QString header = headerData(i, Qt::Horizontal).toString();
+        if (header == "duration") {
+            m_formatters[i] = std::move(std::unique_ptr<Formatter>(new DurationFormatter));
+        } else if (header == "bpm") {
+            m_formatters[i] = std::move(std::unique_ptr<Formatter>(new BpmFormatter));
+        }
+    }
+}
+
+QVariant LibraryTableModel::SqlTableModel::data(const QModelIndex& index, int role) const {
+    if (!index.isValid() || role != Qt::DisplayRole) {
+        return QVariant();
     }
 
+    QVariant result = QSqlTableModel::data(index, role);
+
+    const auto& formatter = m_formatters[index.column()];
+    if (formatter) {
+        return formatter->format(result);
+    }
     return result;
 }
