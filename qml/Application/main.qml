@@ -21,21 +21,45 @@ Window {
         width: parent.width
         height: parent.height
 
-        Button {
-            text: "add 100 records"
-            onClicked: {
-                libraryTableModel.insertSomething();
-            }
-        }
-
         RowLayout {
-            DropArea {
-                Layout.preferredWidth: 200
-                Layout.fillHeight: true
-                onDropped: (drop) => {
-                    console.log(drop, drop.text, drop.urls);
-                    drop.accepted = true;
+            ColumnLayout {
+                Button {
+                    text: "add 100 records"
+                    onClicked: {
+                        libraryTableModel.insertSomething();
+                    }
                 }
+
+                DropArea {
+                    id: dropArea
+
+                    property string dropped
+
+                    Layout.preferredWidth: 200
+                    Layout.fillHeight: true
+                    onDropped: (drop) => {
+                        console.log(drop, drop.text, drop.urls);
+                        dropArea.dropped = drop.urls[0];
+                        drop.accepted = true;
+                    }
+
+                    Rectangle {
+                        anchors.fill: parent
+                        color: "#303030"
+
+                        Text {
+                            anchors.fill: parent
+                            wrapMode: Text.WrapAnywhere
+                            Layout.fillWidth: true
+                            Layout.fillHeight: true
+                            color: "#ffffff"
+                            text: "drop:\n" + dropArea.dropped
+                        }
+
+                    }
+
+                }
+
             }
 
             Item {
@@ -132,7 +156,7 @@ Window {
                             Drag.dragType: Drag.Automatic
                             Drag.mimeData: {
                                 "text/plain": "some tracks",
-                                "text/uri-list": "aaaa:://xxxxx/" + selectionModel.dragString
+                                "text/uri-list": "mixxx:://rows/" + selectionModel.dragString
                             }
                             Drag.onDragFinished: (dropAction) => {
                                 console.log("drag finished");
@@ -147,6 +171,9 @@ Window {
                         }
 
                         MouseArea {
+                            // we might start dragging so postpone select single row
+                            // click without drag
+
                             id: mouseArea
 
                             anchors.fill: parent
@@ -157,12 +184,10 @@ Window {
                                 else if (mouse.modifiers & Qt.ShiftModifier)
                                     selectionModel.selectAdjecentRows(row);
                                 else if (!selected)
-                                    // we might start dragging so postpone select single row
                                     selectionModel.selectSingleRow(row);
                             }
                             onReleased: (mouse) => {
                                 if (!(mouse.modifiers & Qt.ControlModifier) && !(mouse.modifiers & Qt.ShiftModifier))
-                                    // click without drag
                                     selectionModel.selectSingleRow(row);
 
                                 draggable.Drag.drop();
