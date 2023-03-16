@@ -43,6 +43,7 @@ void HeaderView::mouseMoveEvent(QMouseEvent* event) {
         return;
     }
     int i = childItems().indexOf(m_dragItem);
+    qDebug() << event->position().x() << childItems()[i]->x() << x();
     qreal newWidth = std::round(event->position().x() + m_dragDelta - childItems()[i]->x());
     qreal change = newWidth - childItems()[i]->width();
     while (change) {
@@ -124,7 +125,7 @@ void HeaderView::componentComplete() {
 
 qreal HeaderView::columnWidth(int column) {
     if (column >= 0 && column < childItems().size()) {
-        return childItems()[column]->width();
+        return childItems()[column]->width() == 0.0 ? 0.0 : childItems()[column]->width() + m_columnSpacing - m_tableViewColumnSpacing;
     }
     return 0;
 }

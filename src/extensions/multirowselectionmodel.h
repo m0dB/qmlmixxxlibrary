@@ -9,9 +9,13 @@
 class MultiRowSelectionModel : public QItemSelectionModel {
     Q_OBJECT
     QML_ELEMENT
-    Q_PROPERTY(QString dragString READ dragString NOTIFY dragStringChanged)
+    Q_PROPERTY(QList<QUrl> uriList READ uriList NOTIFY uriListChanged)
+    Q_PROPERTY(QString uriListAsString READ uriListAsString NOTIFY uriListChanged)
+
     int m_lastRow{0};
     int m_adjecentStartRow{0};
+    QList<QUrl> m_uriList;
+    QString m_uriListAsString;
 
   public:
     MultiRowSelectionModel(QAbstractItemModel* model, QObject* parent);
@@ -20,10 +24,12 @@ class MultiRowSelectionModel : public QItemSelectionModel {
     Q_INVOKABLE void selectSingleRow(int row);
     Q_INVOKABLE void toggleRow(int row);
     Q_INVOKABLE void selectAdjecentRows(int row);
-    Q_INVOKABLE QString selectedColumnToString(int column) const;
+    Q_INVOKABLE bool isRowSelected(int row) const;
 
   private:
-    QString dragString() const;
+    QList<QUrl> uriList() const;
+    QString uriListAsString() const;
+    void updateUriList();
   signals:
-    void dragStringChanged();
+    void uriListChanged();
 };

@@ -2,8 +2,19 @@
 
 #include <qqml.h>
 
-#include <QSortFilterProxyModel>
-#include <QSqlTableModel>
+#include <QAbstractTableModel>
+#include <QSqlRecord>
+#include <QThread>
+
+class Worker : public QObject {
+    Q_OBJECT
+  public slots:
+    void execute(const QString& queryString, const QString& signal);
+  signals:
+    void ready(const QList<QSqlRecord>& results);
+    void readySort(const QList<QSqlRecord>& results);
+    void totalRowCountReady(const QList<QSqlRecord>& results);
+};
 
 class Formatter {
   public:
@@ -12,31 +23,68 @@ class Formatter {
     virtual QVariant format(const QVariant& variant) = 0;
 };
 
-class LibraryTableModel : public QSortFilterProxyModel {
+class LibraryTableModel : public QAbstractTableModel {
     Q_OBJECT
     QML_ELEMENT
     Q_PROPERTY(int totalRowCount READ totalRowCount NOTIFY totalRowCountChanged)
+    Q_PROPERTY(qreal targetContentY READ targetContentY WRITE setTargetContentY NOTIFY targetContentYChanged)
+    Q_PROPERTY(qreal readyContentY READ readyContentY NOTIFY readyContentYChanged)
 
-    class SqlTableModel : public QSqlTableModel {
-      public:
-        std::vector<std::unique_ptr<Formatter>> m_formatters;
+    QThread m_workerThread;
 
-        SqlTableModel(QObject* parent = nullptr);
-        QVariant data(const QModelIndex& index, int role = Qt::DisplayRole) const override;
-    };
+    std::vector<std::unique_ptr<Formatter>> m_formatters;
+
+    QString m_sort;
+    QStringList m_fieldNames;
 
     int m_totalRowCount{};
-    SqlTableModel* m_sqlTableModel;
+    QList<QSqlRecord> m_results;
 
+    qreal m_targetContentY{};
+    qreal m_readyContentY{};
+    qreal m_pendingContentY{};
+
+  public slots:
+    void ready(const QList<QSqlRecord>& results);
+    void readySort(const QList<QSqlRecord>& results);
+    void totalRowCountReady(const QList<QSqlRecord>& records);
+  signals:
+    void execute(const QString& queryString, const QString& signal);
+
+    void totalRowCountChanged(int);
+    void targetContentYChanged(qreal value);
+    void readyContentYChanged(qreal value);
+
+  public:
+    LibraryTableModel(QObject* parent = nullptr);
+    ~LibraryTableModel();
+
+    int rowCount(const QModelIndex& parent = QModelIndex()) const override;
+
+    int columnCount(const QModelIndex& parent = QModelIndex()) const override;
+
+    QVariant data(const QModelIndex& index, int role = Qt::DisplayRole) const override;
+
+    QVariant headerData(int section, Qt::Orientation orientation, int role = Qt::DisplayRole) const override;
+
+    Q_INVOKABLE void sort(int column, Qt::SortOrder sortOrder) override;
+    Q_INVOKABLE void insertSomething();
+
+  private:
     int totalRowCount() {
         return m_totalRowCount;
     }
 
-  signals:
-    void totalRowCountChanged();
+    qreal targetContentY() const {
+        return m_targetContentY;
+    }
 
-  public:
-    LibraryTableModel(QObject* parent = nullptr);
-    Q_INVOKABLE void sort(int column, Qt::SortOrder sortOrder);
-    Q_INVOKABLE void insertSomething();
+    void setTargetContentY(qreal y);
+
+    qreal readyContentY() const {
+        return m_readyContentY;
+    }
+
+    void requestData(const QString& signal);
+    void requestTotalRowCount();
 };

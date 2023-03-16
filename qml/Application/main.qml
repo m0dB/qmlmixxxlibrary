@@ -16,20 +16,56 @@ Window {
         id: libraryTableModel
     }
 
+    Rectangle {
+        id: dragImageItem 
+
+        width: dragImageItemText.implicitWidth + 40
+        height: 24
+        visible: false
+        property alias text: dragImageItemText.text
+        color: "#101010"
+        radius: 5
+        Text {
+            color: "#ffffff"
+            id: dragImageItemText 
+            anchors.fill: parent
+            horizontalAlignment: Text.AlignHCenter
+            verticalAlignment: Text.AlignVCenter
+        }
+    }
+
+    Item {
+        id: dragItem
+
+        Drag.dragType: Drag.Automatic
+        Drag.supportedActions: Qt.CopyAction
+        Drag.mimeData: {
+            "text/plain": selectionModel.uriListAsString
+        }
+    }
+
     ColumnLayout {
+        id: topLayout
+
         spacing: 0
         width: parent.width
         height: parent.height
 
         RowLayout {
             ColumnLayout {
-                Button {
-                    text: "add 100 records"
-                    onClicked: {
-                        libraryTableModel.insertSomething();
+                spacing: 0
+                Rectangle {
+                    Layout.preferredWidth: 200
+                    Layout.preferredHeight: 40
+                    color: "black"
+                    Button {
+                        anchors.centerIn: parent
+                        text: "add 100 records"
+                        onClicked: {
+                            libraryTableModel.insertSomething();
+                        }
                     }
                 }
-
                 DropArea {
                     id: dropArea
 
@@ -38,9 +74,8 @@ Window {
                     Layout.preferredWidth: 200
                     Layout.fillHeight: true
                     onDropped: (drop) => {
-                        console.log(drop, drop.text, drop.urls);
-                        dropArea.dropped = drop.urls[0];
-                        drop.accepted = true;
+                        dropArea.dropped = drop.text;
+                        drop.accept();
                     }
 
                     Rectangle {
@@ -59,7 +94,21 @@ Window {
                     }
 
                 }
-
+                Rectangle {
+                    Layout.preferredWidth: 200
+                    Layout.preferredHeight: 100
+                    color: "black"
+                    Rectangle {
+                       color: "red"
+                       height: 100
+                       Timer {
+                           interval: 1000/60; running: true; repeat: true
+                            onTriggered: {
+                                parent.width = (parent.width + 1)%200
+                            }
+                       }
+                    }
+                }
             }
 
             Item {
@@ -71,10 +120,12 @@ Window {
                     id: headerView
 
                     x: -libraryTableView.contentX
+                    y: 10
                     showColumns: ["artist", "title", "album", "year", "duration", "bpm", "datetime_added"]
                     implicitHeight: 20
                     model: libraryTableModel
-                    columnSpacing: 2
+                    columnSpacing: 0 
+                    tableViewColumnSpacing: libraryTableView.columnSpacing
                     onWidthChanged: {
                         libraryTableView.forceLayout();
                         libraryTableView.contentWidth = width;
@@ -98,31 +149,50 @@ Window {
                             anchors.fill: parent
                         }
 
+                        Rectangle {
+                            x: 1
+                            width: parent.width - 2
+                            height: 1
+                            color: "#10ffffff"
+                        }
+                        Rectangle {
+                            x: 1
+                            y: parent.height - 1
+                            width: parent.width - 2
+                            height: 1
+                            color: "#30000000"
+                        }
+                        Rectangle {
+                            y: 1
+                            width: 1
+                            height: parent.height - 2 
+                            color: "#10ffffff"
+                        }
+                        Rectangle {
+                            x: parent.width - 1
+                            y: 1
+                            width: 1
+                            height: parent.height - 2
+                            color: "#30000000"
+                        }
+
                     }
 
                 }
-
+////////////////
                 TableView {
                     id: libraryTableView
-
+                    property int dragImageItemCount: 0
+                    contentY: libraryTableModel.readyContentY
                     contentHeight: libraryTableModel.totalRowCount * 20
+                    interactive: false
                     clip: true
-                    y: headerView.height
+                    y: headerView.y + headerView.height
                     width: parent.width
-                    height: parent.height - headerView.height
+                    height: parent.height - y
                     model: libraryTableModel
-                    columnSpacing: 2
+                    columnSpacing: 0
                     columnWidthProvider: headerView.columnWidth
-
-                    // avoid scrollbars interfering with selection
-                    ScrollBar.horizontal: ScrollBar {
-                        interactive: size != 1
-                    }
-
-                    ScrollBar.vertical: ScrollBar {
-                        interactive: size != 1
-                    }
-
                     selectionModel: MultiRowSelectionModel {
                         id: selectionModel
 
@@ -138,66 +208,89 @@ Window {
                         clip: true
 
                         Text {
+                            // Eliding makes layout changes really slow.
+                            // Maybe only elide while not changing the column widths?
                             //elide: Text.ElideRight
 
                             leftPadding: 2
                             color: "white"
                             text: display
                             font.pixelSize: 14
-                            anchors.fill: parent
+                            width: parent.width
+                            height: parent.height
                         }
 
-                        Item {
-                            id: draggable
-
-                            anchors.fill: parent
-                            Drag.hotSpot.x: 0
-                            Drag.hotSpot.y: 0
-                            Drag.dragType: Drag.Automatic
-                            Drag.mimeData: {
-                                "text/plain": "some tracks",
-                                "text/uri-list": "mixxx:://rows/" + selectionModel.dragString
-                            }
-                            Drag.onDragFinished: (dropAction) => {
-                                console.log("drag finished");
-                            }
-
-                            // avoid unexpected binding loop
-                            Binding on Drag.active {
-                                value: mouseArea.drag.active && selected
-                                delayed: true
-                            }
-
+                        Rectangle {
+                            x: parent.width - 4
+                            width: 4
+                            height: parent.height
+                            color: selected ? "#808080" : "#000000"
                         }
+                    }
+                    reuseItems: true
+                }
+                ListView {
+                    id: listView
+                    model: libraryTableModel.totalRowCount
+                    clip: true
+                    y: headerView.y + headerView.height
+                    reuseItems: true
+                    width: parent.width
+                    height: parent.height - y
+                    contentHeight: libraryTableView.contentHeight
+                    contentWidth: libraryTableView.contentWidth
+                    onContentYChanged: {
+                        libraryTableModel.targetContentY = contentY
+                    }
+                    onContentXChanged: {
+                        libraryTableView.contentX = contentX
+                    }
+                    // avoid scrollbars interfering with selection
+                    ScrollBar.horizontal: ScrollBar {
+                        interactive: size != 1
+                    }
 
+                    ScrollBar.vertical: ScrollBar {
+                        interactive: size != 1
+                    }
+                    delegate: Item {
+                        width: listView.width
+                        implicitHeight: 20
                         MouseArea {
-                            // we might start dragging so postpone select single row
-                            // click without drag
-
                             id: mouseArea
-
                             anchors.fill: parent
-                            drag.target: draggable
+                            drag.target: dragItem
                             onPressed: (mouse) => {
                                 if (mouse.modifiers & Qt.ControlModifier)
-                                    selectionModel.toggleRow(row);
+                                    libraryTableView.selectionModel.toggleRow(index);
                                 else if (mouse.modifiers & Qt.ShiftModifier)
-                                    selectionModel.selectAdjecentRows(row);
-                                else if (!selected)
-                                    selectionModel.selectSingleRow(row);
+                                    libraryTableView.selectionModel.selectAdjecentRows(index);
+                                else if (!libraryTableView.selectionModel.isRowSelected(index))
+                                    libraryTableView.selectionModel.selectSingleRow(index);
+                                dragImageItem.text = libraryTableView.selectionModel.uriList.length == 1 ? "1 item" : libraryTableView.selectionModel.uriList.length + " items"
+                                dragImageItem.grabToImage(function(result) {
+                                    libraryTableView.dragImageItemCount = libraryTableView.dragImageItemCount + 1;
+                                    result.saveToFile("/tmp/drag"+libraryTableView.dragImageItemCount+"@2x.png");
+                                    dragItem.Drag.imageSource = "file:///tmp/drag"+libraryTableView.dragImageItemCount+"@2x.png";
+                                }, Qt.size(dragImageItem.width * 2, dragImageItem.height * 2));
                             }
                             onReleased: (mouse) => {
                                 if (!(mouse.modifiers & Qt.ControlModifier) && !(mouse.modifiers & Qt.ShiftModifier))
-                                    selectionModel.selectSingleRow(row);
+                                    libraryTableView.selectionModel.selectSingleRow(index);
 
-                                draggable.Drag.drop();
+                                dragItem.Drag.drop();
+                                dragItem.Drag.active = false;
                             }
+
+                            drag {
+                                onActiveChanged: {
+                                    dragItem.Drag.active = drag.active;
+                                }
+                            }
+
                         }
-
                     }
-
                 }
-
             }
 
         }

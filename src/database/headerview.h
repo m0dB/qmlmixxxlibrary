@@ -10,13 +10,15 @@ class HeaderView : public QQuickItem {
     QML_ELEMENT
     Q_PROPERTY(QQmlComponent* delegate MEMBER m_delegate)
     Q_PROPERTY(QAbstractItemModel* model MEMBER m_model)
-    Q_PROPERTY(int columnSpacing MEMBER m_columnSpacing)
+    Q_PROPERTY(qreal columnSpacing MEMBER m_columnSpacing)
+    Q_PROPERTY(qreal tableViewColumnSpacing MEMBER m_tableViewColumnSpacing)
     Q_PROPERTY(QStringList showColumns MEMBER m_showColumns)
 
     QQmlComponent* m_delegate{};
     QAbstractItemModel* m_model{};
 
     qreal m_columnSpacing{};
+    qreal m_tableViewColumnSpacing{};
     int m_sortingColumn{};
     QQuickItem* m_dragItem{};
     qreal m_dragDelta{};

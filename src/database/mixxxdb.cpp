@@ -1,4 +1,5 @@
 #include "mixxxdb.h"
+
 #include <iostream>
 
 MixxxDb::MixxxDb()

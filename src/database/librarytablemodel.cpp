@@ -1,46 +1,23 @@
 #include "librarytablemodel.h"
 
 #include <QDebug>
+#include <QSqlDriver>
 #include <QSqlError>
 #include <QSqlQuery>
-#include <QSqlRecord>
+#include <chrono>
+#include <mutex>
+#include <thread>
 
 #include "mixxxdb.h"
 
-// QSqlQueryModel to retreive the library table from mixxxdb.sqlite
-//
-// TODO reuse code from mixxx/src/library/basetracktablemodel.cpp
-// from column cache, formatting of values, etc
-// TODO add sorting per column (asc/dec)
-
-LibraryTableModel::LibraryTableModel(QObject* parent)
-        : QSortFilterProxyModel(parent) {
-    m_sqlTableModel = new SqlTableModel(parent);
-    setSourceModel(m_sqlTableModel);
-
-    QSqlQuery query("SELECT COUNT(*) FROM library", MixxxDb::singleton()->database());
+void Worker::execute(const QString& queryString, const QString& signal) {
+    QSqlQuery query(queryString, MixxxDb::singleton()->database());
+    QList<QSqlRecord> results;
     query.exec();
-    if (query.first()) {
-        m_totalRowCount = query.value(0).toInt();
+    while (query.next()) {
+        results.push_back(query.record());
     }
-}
-
-void LibraryTableModel::insertSomething() {
-    for (int i = 0; i < 100; i++) {
-        static int k = 0;
-        k++;
-        QSqlRecord record = m_sqlTableModel->record();
-        record.setValue("artist", QString("Artist") + QString::number(k));
-        record.setValue("title", QString("Title") + QString::number(k));
-        bool result = m_sqlTableModel->insertRecord(-1, record);
-        m_sqlTableModel->submitAll();
-        m_totalRowCount++;
-        emit totalRowCountChanged();
-    }
-}
-
-void LibraryTableModel::sort(int column, Qt::SortOrder sortOrder) {
-    QSortFilterProxyModel::sort(column, sortOrder);
+    QMetaObject::invokeMethod(this, signal.toLocal8Bit().data(), Qt::QueuedConnection, Q_ARG(const QList<QSqlRecord>&, results));
 }
 
 class DurationFormatter : public Formatter {
@@ -66,32 +43,163 @@ class BpmFormatter : public Formatter {
     }
 };
 
-LibraryTableModel::SqlTableModel::SqlTableModel(QObject* parent)
-        : QSqlTableModel(parent, MixxxDb::singleton()->database()) {
-    setTable("library");
-    setEditStrategy(QSqlTableModel::OnManualSubmit);
-    select();
+LibraryTableModel::LibraryTableModel(QObject* parent)
+        : QAbstractTableModel(parent), m_fieldNames{{"location", "artist", "title", "album", "year", "duration", "bpm", "datetime_added"}} {
     m_formatters.resize(columnCount());
-    for (int i = 0; i < columnCount(); i++) {
-        QString header = headerData(i, Qt::Horizontal).toString();
+    for (int i = 0; i < m_fieldNames.size(); i++) {
+        QString header = m_fieldNames[i];
         if (header == "duration") {
             m_formatters[i] = std::move(std::unique_ptr<Formatter>(new DurationFormatter));
         } else if (header == "bpm") {
             m_formatters[i] = std::move(std::unique_ptr<Formatter>(new BpmFormatter));
         }
     }
+
+    Worker* worker = new Worker;
+
+    worker->moveToThread(&m_workerThread);
+
+    connect(&m_workerThread, &QThread::finished, worker, &QObject::deleteLater);
+
+    connect(this, &LibraryTableModel::execute, worker, &Worker::execute);
+
+    connect(worker, &Worker::totalRowCountReady, this, &LibraryTableModel::totalRowCountReady);
+    connect(worker, &Worker::ready, this, &LibraryTableModel::ready);
+    connect(worker, &Worker::readySort, this, &LibraryTableModel::readySort);
+
+    m_workerThread.start();
+
+    requestTotalRowCount();
 }
 
-QVariant LibraryTableModel::SqlTableModel::data(const QModelIndex& index, int role) const {
+LibraryTableModel::~LibraryTableModel() {
+    m_workerThread.quit();
+    m_workerThread.wait();
+}
+
+void LibraryTableModel::requestTotalRowCount() {
+    execute("SELECT COUNT(*) FROM library", "totalRowCountReady");
+}
+
+void LibraryTableModel::requestData(const QString& signal) {
+    int row = static_cast<int>(m_targetContentY / 20.);
+    int from = std::max(0, row - 1);
+    int to = std::min(m_totalRowCount, from + 100);
+
+    int offset = from;
+    int limit = to - from;
+    const auto s = QString("SELECT " + m_fieldNames.join(",") + " FROM library") + m_sort + QString(" LIMIT %1 OFFSET %2").arg(limit).arg(offset);
+
+    emit execute(s, signal);
+}
+
+void LibraryTableModel::totalRowCountReady(const QList<QSqlRecord>& results) {
+    int totalRowCount = results[0].value(0).toInt();
+    if (m_totalRowCount != totalRowCount) {
+        m_totalRowCount = totalRowCount;
+        emit totalRowCountChanged(m_totalRowCount);
+    }
+
+    requestData("ready");
+}
+
+void LibraryTableModel::insertSomething() {
+    /*
+    for (int i = 0; i < 100; i++) {
+        static int k = 0;
+        k++;
+        QSqlRecord record = m_sqlTableModel->record();
+        record.setValue("artist", QString("Artist") + QString::number(k));
+        record.setValue("title", QString("Title") + QString::number(k));
+        bool result = m_sqlTableModel->insertRecord(-1, record);
+        m_sqlTableModel->submitAll();
+        m_totalRowCount++;
+        emit totalRowCountChanged();
+    }
+    */
+}
+
+void LibraryTableModel::sort(int column, Qt::SortOrder sortOrder) {
+    m_sort = " ORDER BY " + m_fieldNames[column] + (sortOrder == Qt::AscendingOrder ? " ASC" : " DESC");
+    requestData("readySort");
+}
+
+int LibraryTableModel::rowCount(const QModelIndex& parent) const {
+    return m_totalRowCount;
+}
+
+int LibraryTableModel::columnCount(const QModelIndex& parent) const {
+    return m_fieldNames.size();
+}
+
+void LibraryTableModel::ready(const QList<QSqlRecord>& results) {
+    if (m_results.isEmpty()) {
+        beginResetModel();
+        m_results = results;
+        endResetModel();
+    } else {
+        m_results = results;
+    }
+    if (m_readyContentY != m_targetContentY) {
+        m_readyContentY = m_targetContentY;
+        emit readyContentYChanged(m_readyContentY);
+    }
+    if (m_targetContentY != m_pendingContentY) {
+        setTargetContentY(m_pendingContentY);
+    }
+}
+void LibraryTableModel::readySort(const QList<QSqlRecord>& results) {
+    ready(results);
+    int row = static_cast<int>(m_readyContentY / 20.);
+    int from = std::max(0, row - 1);
+    int to = std::min(m_totalRowCount, from + 100);
+    dataChanged(index(from, 0), index(to - 1, columnCount() - 1));
+}
+
+QVariant LibraryTableModel::data(const QModelIndex& index, int role) const {
     if (!index.isValid() || role != Qt::DisplayRole) {
         return QVariant();
     }
 
-    QVariant result = QSqlTableModel::data(index, role);
+    if (m_results.isEmpty()) {
+        qDebug() << "no results";
+        return QVariant(QString(""));
+    }
+
+    int row = static_cast<int>(m_readyContentY / 20.);
+    int from = std::max(0, row - 1);
+    int to = std::min(m_totalRowCount, from + 100);
+
+    if (index.row() < from || index.row() >= to) {
+        qDebug() << "out of range" << index.row() << from << to;
+        return QVariant();
+    }
+    QSqlRecord record = m_results[index.row() - from];
 
     const auto& formatter = m_formatters[index.column()];
     if (formatter) {
-        return formatter->format(result);
+        return formatter->format(record.value(index.column()));
     }
-    return result;
+
+    return record.value(index.column());
+}
+
+QVariant LibraryTableModel::headerData(int section, Qt::Orientation orientation, int role) const {
+    if (orientation != Qt::Horizontal || role != Qt::DisplayRole) {
+        return QVariant();
+    }
+    return QVariant(m_fieldNames[section]);
+}
+
+void LibraryTableModel::setTargetContentY(qreal y) {
+    if (m_targetContentY != y) {
+        if (m_targetContentY == m_readyContentY) {
+            m_targetContentY = y;
+            m_pendingContentY = y;
+            emit targetContentYChanged(m_targetContentY);
+            requestData("ready");
+        } else {
+            m_pendingContentY = y;
+        }
+    }
 }

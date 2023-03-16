@@ -13,14 +13,19 @@ MultiRowSelectionModel::MultiRowSelectionModel(QAbstractItemModel* model)
 void MultiRowSelectionModel::selectSingleRow(int row) {
     select(QItemSelection(model()->index(row, 0), model()->index(row, model()->columnCount() - 1)), QItemSelectionModel::ClearAndSelect);
     m_lastRow = m_adjecentStartRow = row;
-    emit dragStringChanged();
+
+    updateUriList();
 }
 
 void MultiRowSelectionModel::toggleRow(int row) {
     select(QItemSelection(model()->index(row, 0), model()->index(row, model()->columnCount() - 1)), QItemSelectionModel::Toggle);
     m_lastRow = m_adjecentStartRow = row;
 
-    emit dragStringChanged();
+    updateUriList();
+}
+
+bool MultiRowSelectionModel::isRowSelected(int row) const {
+    return isSelected(model()->index(row, 0));
 }
 
 void MultiRowSelectionModel::selectAdjecentRows(int row) {
@@ -52,19 +57,37 @@ void MultiRowSelectionModel::selectAdjecentRows(int row) {
     }
     m_lastRow = row;
 
-    emit dragStringChanged();
+    updateUriList();
 }
 
-Q_INVOKABLE QString MultiRowSelectionModel::selectedColumnToString(int column) const {
-    QString result;
+void MultiRowSelectionModel::updateUriList() {
+    m_uriList.clear();
+    int column = 0; // location
+    QString header = model()->headerData(column, Qt::Horizontal).toString();
     const auto list = selectedRows(column);
     for (const auto index : list) {
         const auto variant = model()->data(index);
-        result += (result.isEmpty() ? "" : ",") + variant.toString();
+
+        QUrl url;
+        url.setScheme("mixxx");
+        url.setHost("");
+        url.setPath("/" + header + "/" + variant.toString());
+
+        m_uriList.append(url);
     }
-    return result;
+
+    m_uriListAsString.clear();
+    for (const auto& url : m_uriList) {
+        m_uriListAsString += url.toString() + "\n";
+    }
+
+    emit uriListChanged();
 }
 
-QString MultiRowSelectionModel::dragString() const {
-    return selectedColumnToString(0);
+QList<QUrl> MultiRowSelectionModel::uriList() const {
+    return m_uriList;
+}
+
+QString MultiRowSelectionModel::uriListAsString() const {
+    return m_uriListAsString;
 }
