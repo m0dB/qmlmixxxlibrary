@@ -104,7 +104,6 @@ void LibraryTableModel::totalRowCountReady(const QList<QSqlRecord>& results) {
 }
 
 void LibraryTableModel::insertSomething() {
-    /*
     for (int i = 0; i < 100; i++) {
         static int k = 0;
         k++;
@@ -116,7 +115,6 @@ void LibraryTableModel::insertSomething() {
         m_totalRowCount++;
         emit totalRowCountChanged();
     }
-    */
 }
 
 void LibraryTableModel::sort(int column, Qt::SortOrder sortOrder) {
