@@ -68,7 +68,6 @@ class LibraryTableModel : public QAbstractTableModel {
     QVariant headerData(int section, Qt::Orientation orientation, int role = Qt::DisplayRole) const override;
 
     Q_INVOKABLE void sort(int column, Qt::SortOrder sortOrder) override;
-    Q_INVOKABLE void insertSomething();
 
   private:
     int totalRowCount() {

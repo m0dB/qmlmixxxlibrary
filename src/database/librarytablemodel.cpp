@@ -103,20 +103,6 @@ void LibraryTableModel::totalRowCountReady(const QList<QSqlRecord>& results) {
     requestData("ready");
 }
 
-void LibraryTableModel::insertSomething() {
-    for (int i = 0; i < 100; i++) {
-        static int k = 0;
-        k++;
-        QSqlRecord record = m_sqlTableModel->record();
-        record.setValue("artist", QString("Artist") + QString::number(k));
-        record.setValue("title", QString("Title") + QString::number(k));
-        bool result = m_sqlTableModel->insertRecord(-1, record);
-        m_sqlTableModel->submitAll();
-        m_totalRowCount++;
-        emit totalRowCountChanged();
-    }
-}
-
 void LibraryTableModel::sort(int column, Qt::SortOrder sortOrder) {
     m_sort = " ORDER BY " + m_fieldNames[column] + (sortOrder == Qt::AscendingOrder ? " ASC" : " DESC");
     requestData("readySort");

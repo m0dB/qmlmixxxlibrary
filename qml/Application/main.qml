@@ -54,18 +54,6 @@ Window {
         RowLayout {
             ColumnLayout {
                 spacing: 0
-                Rectangle {
-                    Layout.preferredWidth: 200
-                    Layout.preferredHeight: 40
-                    color: "black"
-                    Button {
-                        anchors.centerIn: parent
-                        text: "add 100 records"
-                        onClicked: {
-                            libraryTableModel.insertSomething();
-                        }
-                    }
-                }
                 DropArea {
                     id: dropArea
 
